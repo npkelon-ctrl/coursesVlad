@@ -38,7 +38,7 @@ class Devices:
                 return str(host)
         raise RuntimeError("Нет свободных адресов")
 
-    def add(self, name):
+    def add(self, name, ai_only=False):
         items = self._load()
         if len(items) >= self.max:
             raise ValueError(f"Уже {self.max} устройств — сначала удали ненужное")
@@ -51,18 +51,25 @@ class Devices:
         _run("wg", "set", IFACE, "peer", pub, "preshared-key", "/dev/stdin", "allowed-ips", f"{ip}/32", inp=psk)
         with CONF.open("a") as f:
             f.write(f"\n# {name}\n[Peer]\nPublicKey = {pub}\nPresharedKey = {psk}\nAllowedIPs = {ip}/32\n")
-        items.append({"name": name, "ip": ip, "pub": pub})
+        items.append({"name": name, "ip": ip, "pub": pub, "ai_only": ai_only})
         self._save(items)
+        if ai_only:
+            from routes import ai_networks
+            # DNS сервера (10.8.0.1) + только адреса ИИ-сервисов; остальное идёт напрямую
+            allowed = ", ".join(["10.8.0.1/32"] + ai_networks())
+            dns = "10.8.0.1"
+        else:
+            allowed, dns = "0.0.0.0/0, ::/0", "1.1.1.1, 8.8.8.8"
         conf = (
             "[Interface]\n"
             f"PrivateKey = {priv}\n"
             f"Address = {ip}/32\n"
-            "DNS = 1.1.1.1, 8.8.8.8\n\n"
+            f"DNS = {dns}\n\n"
             "[Peer]\n"
             f"PublicKey = {SERVER_PUB.read_text().strip()}\n"
             f"PresharedKey = {psk}\n"
             f"Endpoint = {self.endpoint}\n"
-            "AllowedIPs = 0.0.0.0/0, ::/0\n"
+            f"AllowedIPs = {allowed}\n"
             "PersistentKeepalive = 25\n"
         )
         return name, ip, conf

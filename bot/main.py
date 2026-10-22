@@ -24,7 +24,8 @@ owner.callback_query.filter(F.from_user.id == OWNER_ID)
 stranger = Router()  # всем остальным — отказ
 
 MENU = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🔑 Получить VPN", callback_data="new")],
+    [InlineKeyboardButton(text="🔑 Получить VPN (весь трафик)", callback_data="new")],
+    [InlineKeyboardButton(text="🤖 VPN только для ИИ (Claude, OpenAI, Gemini)", callback_data="new_ai")],
     [InlineKeyboardButton(text="📋 Мои устройства", callback_data="list")],
 ])
 
@@ -34,19 +35,20 @@ async def start(m: Message):
     await m.answer("Привет! Нажми кнопку — пришлю настройки VPN для нового устройства.", reply_markup=MENU)
 
 
-@owner.callback_query(F.data == "new")
+@owner.callback_query(F.data.in_({"new", "new_ai"}))
 async def new(c: CallbackQuery):
+    ai_only = c.data == "new_ai"
     await c.answer("Готовлю…")
     n = len(devices.list()) + 1
     try:
-        name, ip, conf = await asyncio.to_thread(devices.add, f"device{n}-{c.from_user.id % 1000}")
+        name, ip, conf = await asyncio.to_thread(devices.add, f"{'ai' if ai_only else 'device'}{n}", ai_only)
     except ValueError as e:
         await c.message.answer(str(e), reply_markup=MENU)
         return
     img = qrcode.make(conf)
     buf = io.BytesIO()
     img.save(buf, "PNG")
-    await c.message.answer_photo(BufferedInputFile(buf.getvalue(), "qr.png"), caption=f"QR-код для приложения WireGuard ({name}, {ip})")
+    await c.message.answer_photo(BufferedInputFile(buf.getvalue(), "qr.png"), caption=f"QR-код для приложения WireGuard ({name}, {ip})" + (". Через VPN идут только ИИ-сервисы." if ai_only else ""))
     await c.message.answer_document(BufferedInputFile(conf.encode(), f"{name}.conf"), caption="Или файл настроек.", reply_markup=MENU)
 
 
